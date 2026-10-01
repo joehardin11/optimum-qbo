@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuickBooks connection — Optimum Manufacturing</title>
+<!--
+  THE REDIRECT PAGE. This is the one page here that does a job rather than
+  stating something.
+
+  Intuit REFUSES localhost and raw IP addresses as a production redirect URI and
+  requires https, so the callback cannot come back to the ERP directly — the ERP
+  is LAN-only and has no public address, deliberately. This page receives the
+  authorization code instead and shows it to be pasted into the connect script.
+
+  ⚠ IT SENDS THE CODE NOWHERE. No fetch, no form post, no analytics, no third
+  party. Everything below runs in the browser and the values never leave it
+  except by the operator copying them. That is the whole reason this page can be
+  hosted publicly without exposing anything: it is a display, not a relay.
+
+  The code is single-use and expires in minutes, and it is worthless without the
+  client secret, which lives only in the ERP's .env.
+-->
+<style>
+  :root { color-scheme: light; }
+  body { font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+         margin: 0; background: #f5f6f8; color: #1a1c20; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  .sub { color: #5b6270; margin: 0 0 2rem; }
+  .card { background: #fff; border: 1px solid #dfe3e8; border-radius: 10px;
+          padding: 20px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; font-size: .82rem;
+          text-transform: uppercase; letter-spacing: .04em; color: #5b6270;
+          margin-bottom: 6px; }
+  .val { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .95rem;
+         background: #f0f2f5; border: 1px solid #dfe3e8; border-radius: 6px;
+         padding: 10px 12px; word-break: break-all; user-select: all; }
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 6px;
+           border: 1px solid #1a6fd4; background: #1a6fd4; color: #fff;
+           cursor: pointer; margin-top: 12px; }
+  button:active { transform: translateY(1px); }
+  .ok  { color: #1a7f45; font-weight: 600; }
+  .bad { color: #c02626; font-weight: 600; }
+  .note { font-size: .88rem; color: #5b6270; }
+  code { background: #f0f2f5; padding: 1px 5px; border-radius: 4px;
+         font-size: .9em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>QuickBooks connection</h1>
+  <p class="sub">Optimum Manufacturing — internal use</p>
+  <div id="out"></div>
+</div>
+
+<script>
+(function () {
+  var q = new URLSearchParams(window.location.search);
+  var out = document.getElementById('out');
+
+  function card(inner) {
+    var d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML = inner;
+    out.appendChild(d);
+    return d;
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  var err = q.get('error');
+  if (err) {
+    card('<p class="bad">QuickBooks did not authorize the connection.</p>' +
+         '<label>Reason</label><div class="val">' + esc(err) +
+         (q.get('error_description') ? ' — ' + esc(q.get('error_description')) : '') +
+         '</div><p class="note">Nothing was connected. Start the connect step again.</p>');
+    return;
+  }
+
+  var code  = q.get('code');
+  var realm = q.get('realmId');
+  var state = q.get('state');
+
+  if (!code) {
+    card('<p class="note">Nothing to show. This page is where QuickBooks sends you ' +
+         'after you approve the connection — open it from the connect step rather ' +
+         'than directly.</p>');
+    return;
+  }
+
+  card('<p class="ok">Approved. Copy these two values into the connect prompt.</p>' +
+       '<p class="note">They stop working after a few minutes, so paste them now. ' +
+       'If they expire, just start the connect step again.</p>');
+
+  card('<label>Authorization code</label><div class="val" id="c">' + esc(code) + '</div>' +
+       '<button data-copy="c">Copy code</button>');
+
+  card('<label>Company ID (realmId)</label><div class="val" id="r">' + esc(realm) + '</div>' +
+       '<button data-copy="r">Copy company ID</button>');
+
+  if (state) {
+    card('<label>State</label><div class="val" id="s">' + esc(state) + '</div>' +
+         '<p class="note">The connect step checks this matches what it sent. ' +
+         'It is what stops someone else’s redirect being accepted as yours.</p>');
+  }
+
+  card('<p class="note"><strong>These values are not sent anywhere.</strong> This page ' +
+       'makes no network requests — it only reads them out of the address bar and ' +
+       'displays them. The code is useless without the client secret, which never ' +
+       'leaves the server’s <code>.env</code>.</p>');
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (b) {
+    b.addEventListener('click', function () {
+      var text = document.getElementById(b.getAttribute('data-copy')).textContent;
+      // Clipboard API needs a secure context; this page is https, but fall back
+      // anyway rather than leave the button doing nothing on an odd browser.
+      function done() { var o = b.textContent; b.textContent = 'Copied';
+                        setTimeout(function () { b.textContent = o; }, 1200); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else { fallback(); }
+      function fallback() {
+        var t = document.createElement('textarea');
+        t.value = text; document.body.appendChild(t); t.select();
+        try { document.execCommand('copy'); done(); } catch (e) { /* user selects manually */ }
+        document.body.removeChild(t);
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
